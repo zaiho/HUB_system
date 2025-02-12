@@ -1,0 +1,128 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base styles */
+html, body {
+  @apply min-h-screen bg-gray-50;
+}
+
+/* Map styles */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+}
+
+/* Form styles */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="date"],
+input[type="time"],
+select,
+textarea {
+  @apply mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#34519e] focus:ring-[#34519e] sm:text-sm;
+}
+
+/* Button styles */
+.btn {
+  @apply inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50;
+}
+
+.btn-primary {
+  @apply text-white bg-[#34519e] hover:bg-[#34519e]/90 focus:ring-[#34519e];
+}
+
+.btn-secondary {
+  @apply text-[#34519e] bg-[#34519e]/10 hover:bg-[#34519e]/20 focus:ring-[#34519e];
+}
+
+/* Table styles */
+.table-responsive {
+  @apply overflow-x-auto -mx-4 sm:-mx-6 lg:-mx-8;
+}
+
+.table-wrapper {
+  @apply inline-block min-w-full py-2 align-middle px-4 sm:px-6 lg:px-8;
+}
+
+/* Card styles */
+.card {
+  @apply bg-white shadow overflow-hidden sm:rounded-lg;
+}
+
+.card-header {
+  @apply px-4 py-5 sm:px-6;
+}
+
+.card-body {
+  @apply px-4 py-5 sm:p-6;
+}
+
+/* Responsive grid */
+.grid-responsive {
+  @apply grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3;
+}
+
+/* Mobile menu */
+.mobile-menu {
+  @apply fixed inset-0 z-50 transform transition-transform duration-300 ease-in-out;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  @apply w-2;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded hover:bg-gray-400;
+}
+
+/* Responsive typography */
+h1 {
+  @apply text-2xl sm:text-3xl font-bold;
+}
+
+h2 {
+  @apply text-xl sm:text-2xl font-semibold;
+}
+
+h3 {
+  @apply text-lg sm:text-xl font-medium;
+}
+
+/* Form group spacing */
+.form-group {
+  @apply space-y-6;
+}
+
+/* Responsive padding */
+.container-padding {
+  @apply px-4 sm:px-6 lg:px-8;
+}
+
+/* Responsive margin */
+.section-margin {
+  @apply my-4 sm:my-6 lg:my-8;
+}
+
+/* Responsive flex */
+.flex-responsive {
+  @apply flex flex-col sm:flex-row;
+}
+
+/* Responsive gap */
+.gap-responsive {
+  @apply gap-4 sm:gap-6 lg:gap-8;
+}
+
+/* Font family */
+body {
+  font-family: 'Montserrat', sans-serif;
+}
