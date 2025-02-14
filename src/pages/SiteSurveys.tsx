@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Plus, FileText, Calendar, AlertCircle, ArrowLeft, PencilIcon, Trash2, CheckCircle, Download, FileDown } from 'lucide-react';
+import { Plus, FileText, Calendar, AlertCircle, ArrowLeft, PencilIcon, Trash2, CheckCircle, Download, FileDown, FileOutput } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -17,7 +17,944 @@ export function SiteSurveys() {
   const [error, setError] = useState<string | null>(null);
   const [deletingSurvey, setDeletingSurvey] = useState<string | null>(null);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const [exportingPDF, setExportingPDF] = useState(false);
+  const [exportingSurveyPDF, setExportingSurveyPDF] = useState<string | null>(null);
+
+  const handleGenerateSurfaceWaterSurveyPDF = async (survey: Survey) => {
+    if (!survey || survey.type !== 'surface_water') return;
+    
+    try {
+      setExportingSurveyPDF(survey.id);
+      setError(null);
+
+      // Récupérer les données complètes du sondage
+      const { data: fullSurvey, error: surveyError } = await supabase
+        .from('surveys')
+        .select('id, site_id, type, created_at, created_by, common_data, specific_data')
+        .eq('id', survey.id)
+        .single();
+
+      if (surveyError) throw surveyError;
+
+      // Récupérer les informations du site
+      const { data: siteData, error: siteError } = await supabase
+        .from('sites')
+        .select('*')
+        .eq('id', siteId)
+        .single();
+
+      if (siteError) throw siteError;
+
+      const doc = new jsPDF();
+
+      // En-tête avec logo
+      doc.addImage('https://i.imgur.com/nEpYFLo.png', 'PNG', 10, 10, 30, 15);
+      doc.setFontSize(16);
+      doc.text('Fiche de prélèvement d\'Eaux Superficielles', 45, 20);
+
+      // Informations générales
+      doc.setFontSize(12);
+      doc.text('Informations générales', 10, 40);
+      
+      doc.setFontSize(10);
+      doc.text('Nom du prélèvement:', 10, 50);
+      doc.text(String(fullSurvey.specific_data?.name || 'Non renseigné'), 60, 50);
+
+      doc.text('Numéro d\'affaire:', 10, 55);
+      doc.text(siteData.project_number || 'Non renseigné', 60, 55);
+
+      doc.text('Client:', 10, 60);
+      doc.text(siteData.name || 'Non renseigné', 60, 60);
+
+      doc.text('Adresse et commune:', 10, 65);
+      doc.text(`${siteData.location || ''}, ${siteData.city || 'Non renseigné'}`, 60, 65);
+
+      doc.text('Chef de projet:', 10, 70);
+      doc.text(siteData.project_manager || 'Non renseigné', 60, 70);
+
+      doc.text('Opérateur:', 10, 75);
+      doc.text(siteData.engineer_in_charge || 'Non renseigné', 60, 75);
+
+      // Conditions météorologiques
+      doc.setFontSize(12);
+      doc.text('Conditions météorologiques', 10, 90);
+      
+      doc.setFontSize(10);
+      doc.text('Date:', 10, 100);
+      doc.text(format(new Date(fullSurvey.specific_data?.generalInfo?.date || fullSurvey.created_at), 'dd/MM/yyyy', { locale: fr }), 60, 100);
+
+      doc.text('Heure:', 10, 105);
+      doc.text(fullSurvey.specific_data?.generalInfo?.time || 'Non renseigné', 60, 105);
+
+      doc.text('Température de l\'air:', 10, 110);
+      doc.text(`${fullSurvey.specific_data?.generalInfo?.airTemperature || 'Non renseigné'} °C`, 60, 110);
+
+      doc.text('Conditions météo:', 10, 115);
+      doc.text(String(fullSurvey.specific_data?.generalInfo?.weatherCondition || 'Non renseigné'), 60, 115);
+
+      // Description de la station
+      doc.addPage();
+      doc.setFontSize(12);
+      doc.text('Description de la station de prélèvement', 10, 20);
+
+      doc.setFontSize(10);
+      doc.text('Description:', 10, 30);
+      const description = doc.splitTextToSize(
+        fullSurvey.specific_data?.stationDescription?.description || 'Non renseigné',
+        130
+      );
+      doc.text(description, 60, 30);
+
+      doc.text('Type d\'eau:', 10, 45);
+      doc.text(String(fullSurvey.specific_data?.stationDescription?.waterType || 'Non renseigné'), 60, 45);
+
+      doc.text('Débit estimé:', 10, 50);
+      doc.text(String(fullSurvey.specific_data?.stationDescription?.estimatedFlow || 'Non renseigné'), 60, 50);
+
+      doc.text('Type d\'écoulement:', 10, 55);
+      doc.text(String(fullSurvey.specific_data?.stationDescription?.flowType || 'Non renseigné'), 60, 55);
+
+      // Observations de terrain
+      doc.setFontSize(12);
+      doc.text('Observations de terrain', 10, 70);
+
+      doc.setFontSize(10);
+      doc.text('Turbidité:', 10, 80);
+      doc.text(String(fullSurvey.specific_data?.fieldObservations?.turbidity || 'Non renseigné'), 60, 80);
+
+      doc.text('Couleur de l\'eau:', 10, 85);
+      doc.text(String(fullSurvey.specific_data?.fieldObservations?.waterColor || 'Non renseigné'), 60, 85);
+
+      doc.text('Odeur de l\'eau:', 10, 90);
+      doc.text(String(fullSurvey.specific_data?.fieldObservations?.waterOdor || 'Non renseigné'), 60, 90);
+
+      doc.text('Présence de:', 10, 95);
+      const observations = [];
+      if (fullSurvey.specific_data?.fieldObservations?.hasLeavesMoss) observations.push('Feuilles/mousses');
+      if (fullSurvey.specific_data?.fieldObservations?.hasFloating) observations.push('Flottants');
+      if (fullSurvey.specific_data?.fieldObservations?.hasShade) observations.push('Ombrage');
+      doc.text(observations.join(', ') || 'Aucune observation particulière', 60, 95);
+
+      // Paramètres mesurés
+      doc.addPage();
+      doc.setFontSize(12);
+      doc.text('Paramètres mesurés', 10, 20);
+
+      const parameters = fullSurvey.specific_data?.parameters || {};
+      (doc as any).autoTable({
+        startY: 30,
+        head: [['Paramètre', 'Début', 'Intermédiaire', 'Fin']],
+        body: [
+          ['Heure', parameters.time?.start || '-', parameters.time?.intermediate || '-', parameters.time?.end || '-'],
+          ['Température (°C)', parameters.temperature?.start || '-', parameters.temperature?.intermediate || '-', parameters.temperature?.end || '-'],
+          ['Conductivité', parameters.conductivity?.start || '-', parameters.conductivity?.intermediate || '-', parameters.conductivity?.end || '-'],
+          ['pH', parameters.ph?.start || '-', parameters.ph?.intermediate || '-', parameters.ph?.end || '-'],
+          ['Redox (mV)', parameters.redox?.start || '-', parameters.redox?.intermediate || '-', parameters.redox?.end || '-']
+        ],
+        theme: 'grid',
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [52, 81, 158], textColor: [255, 255, 255] }
+      });
+
+      // Prélèvements
+      doc.setFontSize(12);
+      doc.text('Prélèvements', 10, 100);
+
+      doc.setFontSize(10);
+      doc.text('Type de prélèvement:', 10, 110);
+      doc.text(String(fullSurvey.specific_data?.sampling?.type || 'Non renseigné'), 80, 110);
+
+      doc.text('Matériel utilisé:', 10, 115);
+      doc.text(String(fullSurvey.specific_data?.sampling?.equipment || 'Non renseigné'), 80, 115);
+
+      doc.text('Profondeur de prélèvement:', 10, 120);
+      doc.text(`${fullSurvey.specific_data?.sampling?.depth || 'Non renseigné'} m`, 80, 120);
+
+      // Conditionnement et transport
+      doc.addPage();
+      doc.setFontSize(12);
+      doc.text('Conditionnement et transport', 10, 20);
+
+      doc.setFontSize(10);
+      doc.text('Conditionnement:', 10, 30);
+      doc.text(String(fullSurvey.specific_data?.sampleManagement?.conditioning || 'Non renseigné'), 80, 30);
+
+      doc.text('Laboratoire:', 10, 35);
+      doc.text(String(fullSurvey.specific_data?.sampleManagement?.laboratory || 'Non renseigné'), 80, 35);
+
+      doc.text('Transporteur:', 10, 40);
+      doc.text(String(fullSurvey.specific_data?.sampleManagement?.transporter || 'Non renseigné'), 80, 40);
+
+      doc.text('Date d\'envoi:', 10, 45);
+      const shippingDate = fullSurvey.specific_data?.sampleManagement?.shippingDate
+        ? format(new Date(fullSurvey.specific_data.sampleManagement.shippingDate), 'dd/MM/yyyy', { locale: fr })
+        : 'Non renseigné';
+      doc.text(shippingDate, 80, 45);
+
+      // Sauvegarde du PDF
+      const fileName = `eaux-superficielles-${fullSurvey.specific_data?.name || 'sans-nom'}-${format(new Date(), 'yyyy-MM-dd-HH-mm')}.pdf`;
+      doc.save(fileName);
+
+    } catch (err) {
+      console.error('Error generating surface water survey PDF:', err);
+      setError('Une erreur est survenue lors de la génération du PDF. Veuillez réessayer.');
+    } finally {
+      setExportingSurveyPDF(null);
+    }
+  };
+
+  const handleGenerateGroundwaterSurveyPDF = async (survey: Survey) => {
+    if (!survey || survey.type !== 'groundwater') return;
+    
+    try {
+      setExportingSurveyPDF(survey.id);
+      setError(null);
+
+      // Récupérer les données complètes du sondage
+      const { data: fullSurvey, error: surveyError } = await supabase
+        .from('surveys')
+        .select('id, site_id, type, created_at, created_by, common_data, specific_data')
+        .eq('id', survey.id)
+        .single();
+
+      if (surveyError) throw surveyError;
+
+      // Récupérer les informations du site
+      const { data: siteData, error: siteError } = await supabase
+        .from('sites')
+        .select('*')
+        .eq('id', siteId)
+        .single();
+
+      if (siteError) throw siteError;
+
+      const doc = new jsPDF();
+
+      // En-tête avec logo
+      doc.addImage('https://i.imgur.com/nEpYFLo.png', 'PNG', 10, 10, 30, 15);
+      doc.setFontSize(16);
+      doc.text('Fiche de prélèvement d\'Eaux Souterraines', 45, 20);
+
+      // Informations générales
+      doc.setFontSize(12);
+      doc.text('Informations générales', 10, 40);
+      
+      doc.setFontSize(10);
+      doc.text('Nom du piézomètre:', 10, 50);
+      doc.text(String(fullSurvey.specific_data?.name || 'Non renseigné'), 60, 50);
+
+      doc.text('Numéro d\'affaire:', 10, 55);
+      doc.text(siteData.project_number || 'Non renseigné', 60, 55);
+
+      doc.text('Client:', 10, 60);
+      doc.text(siteData.name || 'Non renseigné', 60, 60);
+
+      doc.text('Adresse et commune:', 10, 65);
+      doc.text(`${siteData.location || ''}, ${siteData.city || 'Non renseigné'}`, 60, 65);
+
+      doc.text('Chef de projet:', 10, 70);
+      doc.text(siteData.project_manager || 'Non renseigné', 60, 70);
+
+      doc.text('Opérateur:', 10, 75);
+      doc.text(siteData.engineer_in_charge || 'Non renseigné', 60, 75);
+
+      // Conditions météorologiques
+      doc.setFontSize(12);
+      doc.text('Conditions météorologiques', 10, 90);
+      
+      doc.setFontSize(10);
+      doc.text('Date:', 10, 100);
+      doc.text(format(new Date(fullSurvey.common_data?.date || fullSurvey.created_at), 'dd/MM/yyyy', { locale: fr }), 60, 100);
+
+      doc.text('Heure:', 10, 105);
+      doc.text(fullSurvey.common_data?.time || 'Non renseigné', 60, 105);
+
+      const weatherParts = fullSurvey.common_data?.weather_conditions
+        ? fullSurvey.common_data.weather_conditions.split(' - ')
+        : ['Non renseigné'];
+
+      doc.text('Météo:', 10, 110);
+      doc.text(weatherParts[0], 60, 110);
+
+      doc.text('Température:', 10, 115);
+      const temperatureText = weatherParts.length > 1
+        ? weatherParts[1]
+        : 'Non renseigné';
+      doc.text(temperatureText, 60, 115);
+
+      // Caractéristiques de l'ouvrage
+      doc.addPage();
+      doc.setFontSize(12);
+      doc.text('Caractéristiques de l\'ouvrage', 10, 20);
+
+      doc.setFontSize(10);
+      doc.text('Profondeur totale:', 10, 30);
+      doc.text(`${fullSurvey.specific_data?.well_characteristics?.total_depth || 'Non renseigné'} m`, 80, 30);
+
+      doc.text('Niveau d\'eau:', 10, 35);
+      doc.text(`${fullSurvey.specific_data?.well_characteristics?.water_level || 'Non renseigné'} m`, 80, 35);
+
+      doc.text('Diamètre:', 10, 40);
+      doc.text(`${fullSurvey.specific_data?.well_characteristics?.diameter || 'Non renseigné'} mm`, 80, 40);
+
+      doc.text('Type de tubage:', 10, 45);
+      doc.text(String(fullSurvey.specific_data?.well_characteristics?.casing_type || 'Non renseigné'), 80, 45);
+
+      // Purge
+      doc.setFontSize(12);
+      doc.text('Purge', 10, 60);
+
+      doc.setFontSize(10);
+      doc.text('Volume d\'eau purgé:', 10, 70);
+      doc.text(`${fullSurvey.specific_data?.purge?.volume || 'Non renseigné'} L`, 80, 70);
+
+      doc.text('Débit de purge:', 10, 75);
+      doc.text(`${fullSurvey.specific_data?.purge?.flow_rate || 'Non renseigné'} L/min`, 80, 75);
+
+      doc.text('Durée de purge:', 10, 80);
+      doc.text(`${fullSurvey.specific_data?.purge?.duration || 'Non renseigné'} min`, 80, 80);
+
+      // Paramètres physico-chimiques
+      doc.setFontSize(12);
+      doc.text('Paramètres physico-chimiques', 10, 95);
+
+      const parameters = fullSurvey.specific_data?.parameters || {};
+      (doc as any).autoTable({
+        startY: 100,
+        head: [['Paramètre', 'Début', 'Milieu', 'Fin']],
+        body: [
+          ['pH', parameters.ph?.start || '-', parameters.ph?.middle || '-', parameters.ph?.end || '-'],
+          ['Température (°C)', parameters.temperature?.start || '-', parameters.temperature?.middle || '-', parameters.temperature?.end || '-'],
+          ['Conductivité (µS/cm)', parameters.conductivity?.start || '-', parameters.conductivity?.middle || '-', parameters.conductivity?.end || '-'],
+          ['O2 dissous (mg/L)', parameters.dissolved_oxygen?.start || '-', parameters.dissolved_oxygen?.middle || '-', parameters.dissolved_oxygen?.end || '-'],
+          ['Redox (mV)', parameters.redox?.start || '-', parameters.redox?.middle || '-', parameters.redox?.end || '-']
+        ],
+        theme: 'grid',
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [52, 81, 158], textColor: [255, 255, 255] }
+      });
+
+      // Observations organoleptiques
+      doc.addPage();
+      doc.setFontSize(12);
+      doc.text('Observations organoleptiques', 10, 20);
+
+      doc.setFontSize(10);
+      doc.text('Couleur:', 10, 30);
+      doc.text(String(fullSurvey.specific_data?.organoleptic?.color || 'Non renseigné'), 80, 30);
+
+      doc.text('Odeur:', 10, 35);
+      doc.text(String(fullSurvey.specific_data?.organoleptic?.odor || 'Non renseigné'), 80, 35);
+
+      doc.text('Turbidité:', 10, 40);
+      doc.text(String(fullSurvey.specific_data?.organoleptic?.turbidity || 'Non renseigné'), 80, 40);
+
+      doc.text('Phase libre:', 10, 45);
+      doc.text(String(fullSurvey.specific_data?.organoleptic?.free_phase || 'Non renseigné'), 80, 45);
+
+      // Prélèvements
+      doc.setFontSize(12);
+      doc.text('Prélèvements', 10, 60);
+
+      doc.setFontSize(10);
+      doc.text('Méthode de prélèvement:', 10, 70);
+      doc.text(String(fullSurvey.specific_data?.sampling?.method || 'Non renseigné'), 80, 70);
+
+      doc.text('Profondeur de prélèvement:', 10, 75);
+      doc.text(`${fullSurvey.specific_data?.sampling?.depth || 'Non renseigné'} m`, 80, 75);
+
+      doc.text('Débit de prélèvement:', 10, 80);
+      doc.text(`${fullSurvey.specific_data?.sampling?.flow_rate || 'Non renseigné'} L/min`, 80, 80);
+
+      // Conditionnement et transport
+      doc.setFontSize(12);
+      doc.text('Conditionnement et transport', 10, 95);
+
+      doc.setFontSize(10);
+      doc.text('Laboratoire:', 10, 105);
+      doc.text(String(fullSurvey.specific_data?.laboratory?.name || 'Non renseigné'), 80, 105);
+
+      doc.text('Conditionnement:', 10, 110);
+      doc.text(String(fullSurvey.specific_data?.laboratory?.packaging || 'Non renseigné'), 80, 110);
+
+      doc.text('Transporteur:', 10, 115);
+      doc.text(String(fullSurvey.specific_data?.laboratory?.transporter || 'Non renseigné'), 80, 115);
+
+      doc.text('Date d\'envoi:', 10, 120);
+      const deliveryDate = fullSurvey.specific_data?.laboratory?.deliveryDate
+        ? format(new Date(fullSurvey.specific_data.laboratory.deliveryDate), 'dd/MM/yyyy', { locale: fr })
+        : 'Non renseigné';
+      doc.text(deliveryDate, 80, 120);
+
+      doc.text('Analyses à réaliser:', 10, 125);
+      const analyses = doc.splitTextToSize(
+        fullSurvey.specific_data?.laboratory?.analyses || 'Non renseigné',
+        100
+      );
+      doc.text(analyses, 80, 125);
+
+      // Sauvegarde du PDF
+      const fileName = `eaux-souterraines-${fullSurvey.specific_data?.name || 'sans-nom'}-${format(new Date(), 'yyyy-MM-dd-HH-mm')}.pdf`;
+      doc.save(fileName);
+
+    } catch (err) {
+      console.error('Error generating groundwater survey PDF:', err);
+      setError('Une erreur est survenue lors de la génération du PDF. Veuillez réessayer.');
+    } finally {
+      setExportingSurveyPDF(null);
+    }
+  };
+
+  const handleGenerateAirSurveyPDF = async (survey: Survey) => {
+    if (!survey || survey.type !== 'ambient_air') return;
+    
+    try {
+      setExportingSurveyPDF(survey.id);
+      setError(null);
+
+      // Récupérer les données complètes du sondage
+      const { data: fullSurvey, error: surveyError } = await supabase
+        .from('surveys')
+        .select('id, site_id, type, created_at, created_by, common_data, specific_data')
+        .eq('id', survey.id)
+        .single();
+
+      if (surveyError) throw surveyError;
+
+      // Récupérer les informations du site
+      const { data: siteData, error: siteError } = await supabase
+        .from('sites')
+        .select('*')
+        .eq('id', siteId)
+        .single();
+
+      if (siteError) throw siteError;
+
+      const doc = new jsPDF();
+
+      // En-tête avec logo
+      doc.addImage('https://i.imgur.com/nEpYFLo.png', 'PNG', 10, 10, 30, 15);
+      doc.setFontSize(16);
+      doc.text('Fiche prélèvement d\'Air Ambiant', 45, 20);
+
+      // Informations générales
+      doc.setFontSize(12);
+      doc.text('Informations générales', 10, 40);
+      
+      doc.setFontSize(10);
+      doc.text('Nom du prélèvement:', 10, 50);
+      doc.text(String(fullSurvey.specific_data?.samplingName || 'Non renseigné'), 60, 50);
+
+      doc.text('Numéro d\'affaire:', 10, 55);
+      doc.text(siteData.project_number || 'Non renseigné', 60, 55);
+
+      doc.text('Client:', 10, 60);
+      doc.text(siteData.name || 'Non renseigné', 60, 60);
+
+      doc.text('Adresse et commune:', 10, 65);
+      doc.text(`${siteData.location || ''}, ${siteData.city || 'Non renseigné'}`, 60, 65);
+
+      doc.text('Chef de projet:', 10, 70);
+      doc.text(siteData.project_manager || 'Non renseigné', 60, 70);
+
+      doc.text('Opérateur:', 10, 75);
+      doc.text(siteData.engineer_in_charge || 'Non renseigné', 60, 75);
+
+      // Localisation
+      doc.setFontSize(12);
+      doc.text('Localisation', 10, 90);
+      
+      doc.setFontSize(10);
+      doc.text('Pièce:', 10, 100);
+      doc.text(String(fullSurvey.specific_data?.location?.room || 'Non renseigné'), 60, 100);
+
+      doc.text('Position dans la pièce:', 10, 105);
+      doc.text(String(fullSurvey.specific_data?.location?.position || 'Non renseigné'), 60, 105);
+
+      doc.text('Coordonnées GPS:', 10, 110);
+      doc.text(`Lat: ${fullSurvey.specific_data?.location?.coordinates?.latitude || 'Non renseigné'}`, 60, 110);
+      doc.text(`Long: ${fullSurvey.specific_data?.location?.coordinates?.longitude || 'Non renseigné'}`, 60, 115);
+
+      // Conditions météorologiques
+      doc.addPage();
+      doc.setFontSize(12);
+      doc.text('Conditions météorologiques', 10, 20);
+      
+      doc.setFontSize(10);
+      doc.text('Description:', 10, 30);
+      doc.text(String(fullSurvey.specific_data?.weatherConditions?.description || 'Non renseigné'), 80, 30);
+
+      doc.text('T°C ext:', 10, 35);
+      doc.text(`${fullSurvey.specific_data?.weatherConditions?.externalTemp || 'Non renseigné'}°C`, 80, 35);
+
+      doc.text('T°C int:', 10, 40);
+      doc.text(`${fullSurvey.specific_data?.weatherConditions?.internalTemp || 'Non renseigné'}°C`, 80, 40);
+
+      doc.text('Pression:', 10, 45);
+      doc.text(`${fullSurvey.specific_data?.weatherConditions?.pressure || 'Non renseigné'} Pa`, 80, 45);
+
+      doc.text('Humidité:', 10, 50);
+      doc.text(`${fullSurvey.specific_data?.weatherConditions?.humidity || 'Non renseigné'}%`, 80, 50);
+
+      doc.text('Vent:', 10, 55);
+      doc.text(String(fullSurvey.specific_data?.weatherConditions?.windSpeedDirection || 'Non renseigné'), 80, 55);
+
+      // Description du prélèvement
+      doc.setFontSize(12);
+      doc.text('Description du prélèvement', 10, 70);
+
+      doc.setFontSize(10);
+      doc.text('Type d\'échantillonnage:', 10, 80);
+      doc.text(String(fullSurvey.specific_data?.sampling?.type || 'Non renseigné'), 80, 80);
+
+      doc.text('Nombre de supports:', 10, 85);
+      doc.text(String(fullSurvey.specific_data?.sampling?.supportCount || 'Non renseigné'), 80, 85);
+
+      doc.text('Nature des supports:', 10, 90);
+      doc.text(String(fullSurvey.specific_data?.sampling?.supportType || 'Non renseigné'), 80, 90);
+
+      doc.text('Description de l\'installation:', 10, 95);
+      const installDesc = doc.splitTextToSize(
+        fullSurvey.specific_data?.sampling?.installationDescription || 'Non renseigné',
+        100
+      );
+      doc.text(installDesc, 80, 95);
+
+      doc.text('Hauteur de l\'ouvrage:', 10, 105);
+      doc.text(`${fullSurvey.specific_data?.sampling?.height || 'Non renseigné'} m`, 80, 105);
+
+      doc.text('Ventilation:', 10, 110);
+      doc.text(fullSurvey.specific_data?.sampling?.ventilation ? 'Oui' : 'Non', 80, 110);
+
+      // Mesures semi-quantitatives
+      doc.addPage();
+      doc.setFontSize(12);
+      doc.text('Mesures semi-quantitatives', 10, 20);
+
+      const measurements = fullSurvey.specific_data?.measurements || {};
+      (doc as any).autoTable({
+        startY: 30,
+        head: [['Paramètre', 'Valeur']],
+        body: [
+          ['PID', `${measurements.pid || 'Non renseigné'} ppmV`],
+          ['O2', `${measurements.o2 || 'Non renseigné'} %`],
+          ['H2S', `${measurements.h2s || 'Non renseigné'} ppmV`],
+          ['CH4', `${measurements.ch4 || 'Non renseigné'} %`],
+          ['CO', `${measurements.co || 'Non renseigné'} ppmV`]
+        ],
+        theme: 'grid',
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [52, 81, 158], textColor: [255, 255, 255] }
+      });
+
+      // Contrôle de débit
+      doc.setFontSize(12);
+      doc.text('Contrôle de débit', 10, 80);
+
+      const flow = fullSurvey.specific_data?.flow || {};
+      (doc as any).autoTable({
+        startY: 85,
+        head: [['Paramètre', 'Début', 'Intermédiaire', 'Fin']],
+        body: [
+          ['Heure', flow.startTime || '-', flow.endTime || '-', flow.duration || '-'],
+          ['Débit', 
+            flow.flowRates?.start || '-',
+            flow.flowRates?.intermediate || '-',
+            flow.flowRates?.end || '-'
+          ]
+        ],
+        theme: 'grid',
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [52, 81, 158], textColor: [255, 255, 255] }
+      });
+
+      doc.setFontSize(10);
+      doc.text('Débit moyen retenu:', 10, 130);
+      doc.text(`${flow.averageFlow || 'Non renseigné'} l/min`, 80, 130);
+
+      doc.text('Volume total prélevé:', 10, 135);
+      doc.text(`${flow.totalVolume || 'Non renseigné'} l`, 80, 135);
+
+      // Conditionnement et transport
+      doc.addPage();
+      doc.setFontSize(12);
+      doc.text('Conditionnement et transport', 10, 20);
+
+      doc.setFontSize(10);
+      doc.text('Laboratoire:', 10, 30);
+      doc.text(String(fullSurvey.specific_data?.laboratory?.name || 'Non renseigné'), 80, 30);
+
+      doc.text('Conditionnement:', 10, 35);
+      doc.text(String(fullSurvey.specific_data?.laboratory?.packaging || 'Non renseigné'), 80, 35);
+
+      doc.text('Transporteur:', 10, 40);
+      doc.text(String(fullSurvey.specific_data?.laboratory?.transporter || 'Non renseigné'), 80, 40);
+
+      doc.text('Date d\'envoi:', 10, 45);
+      const deliveryDate = fullSurvey.specific_data?.laboratory?.deliveryDate
+        ? format(new Date(fullSurvey.specific_data.laboratory.deliveryDate), 'dd/MM/yyyy', { locale: fr })
+        : 'Non renseigné';
+      doc.text(deliveryDate, 80, 45);
+
+      doc.text('Substances à analyser:', 10, 50);
+      const substances = doc.splitTextToSize(
+        fullSurvey.specific_data?.laboratory?.substancesToAnalyze || 'Non renseigné',
+        100
+      );
+      doc.text(substances, 80, 50);
+
+      // Sauvegarde du PDF
+      const fileName = `air-ambiant-${format(new Date(), 'yyyy-MM-dd-HH-mm')}.pdf`;
+      doc.save(fileName);
+
+    } catch (err) {
+      console.error('Error generating ambient air survey PDF:', err);
+      setError('Une erreur est survenue lors de la génération du PDF. Veuillez réessayer.');
+    } finally {
+      setExportingSurveyPDF(null);
+    }
+  };
+
+  const handleGeneratePIDSurveyPDF = async (survey: Survey) => {
+    if (!survey || survey.type !== 'pid') return;
+    
+    try {
+      setExportingSurveyPDF(survey.id);
+      setError(null);
+
+      // Récupérer les données complètes du sondage
+      const { data: fullSurvey, error: surveyError } = await supabase
+        .from('surveys')
+        .select('id, site_id, type, created_at, created_by, common_data, specific_data')
+        .eq('id', survey.id)
+        .single();
+
+      if (surveyError) throw surveyError;
+
+      // Récupérer les informations du site
+      const { data: siteData, error: siteError } = await supabase
+        .from('sites')
+        .select('*')
+        .eq('id', siteId)
+        .single();
+
+      if (siteError) throw siteError;
+
+      const doc = new jsPDF();
+
+      // En-tête avec logo
+      doc.addImage('https://i.imgur.com/nEpYFLo.png', 'PNG', 10, 10, 30, 15);
+      doc.setFontSize(16);
+      doc.text('Fiche de Campagne PID', 45, 20);
+
+      // Informations générales
+      doc.setFontSize(12);
+      doc.text('Informations générales', 10, 40);
+      
+      doc.setFontSize(10);
+      doc.text('Numéro d\'affaire:', 10, 50);
+      doc.text(siteData.project_number || 'Non renseigné', 60, 50);
+
+      doc.text('Client:', 10, 55);
+      doc.text(siteData.name || 'Non renseigné', 60, 55);
+
+      doc.text('Adresse et commune:', 10, 60);
+      doc.text(`${siteData.location || ''}, ${siteData.city || 'Non renseigné'}`, 60, 60);
+
+      doc.text('Chef de projet:', 10, 65);
+      doc.text(siteData.project_manager || 'Non renseigné', 60, 65);
+
+      doc.text('Opérateur:', 10, 70);
+      doc.text(siteData.engineer_in_charge || 'Non renseigné', 60, 70);
+
+      // Conditions météorologiques
+      doc.setFontSize(12);
+      doc.text('Conditions météorologiques', 10, 85);
+      
+      doc.setFontSize(10);
+      doc.text('Date:', 10, 95);
+      doc.text(format(new Date(fullSurvey.specific_data?.date || fullSurvey.created_at), 'dd/MM/yyyy', { locale: fr }), 60, 95);
+
+      doc.text('Description:', 10, 100);
+      doc.text(String(fullSurvey.specific_data?.weatherConditions?.description || 'Non renseigné'), 60, 100);
+
+      doc.text('Température ext.:', 10, 105);
+      doc.text(`${fullSurvey.specific_data?.weatherConditions?.externalTemp || 'Non renseigné'}°C`, 60, 105);
+
+      doc.text('Température int.:', 10, 110);
+      doc.text(`${fullSurvey.specific_data?.weatherConditions?.internalTemp || 'Non renseigné'}°C`, 60, 110);
+
+      doc.text('Pression:', 10, 115);
+      doc.text(`${fullSurvey.specific_data?.weatherConditions?.pressure || 'Non renseigné'} Pa`, 60, 115);
+
+      doc.text('Humidité:', 10, 120);
+      doc.text(`${fullSurvey.specific_data?.weatherConditions?.humidity || 'Non renseigné'}%`, 60, 120);
+
+      // Description de l'ouvrage
+      doc.setFontSize(12);
+      doc.text('Description de l\'ouvrage', 110, 40);
+
+      doc.setFontSize(10);
+      doc.text('Type d\'ouvrage:', 110, 50);
+      doc.text(fullSurvey.specific_data?.structureDescription?.type === 'temporary' ? 'Temporaire' : 'Permanent', 160, 50);
+
+      doc.text('Description:', 110, 55);
+      const description = doc.splitTextToSize(
+        fullSurvey.specific_data?.structureDescription?.details || 'Non renseigné',
+        80
+      );
+      doc.text(description, 160, 55);
+
+      // Tableau des mesures
+      doc.addPage();
+      doc.setFontSize(12);
+      doc.text('Mesures semi-quantitatives', 10, 20);
+
+      const measurements = fullSurvey.specific_data?.measurements || [];
+      if (measurements.length > 0) {
+        (doc as any).autoTable({
+          startY: 30,
+          head: [['Localisation', 'PID (ppmV)', 'O2 (%)', 'H2S (ppmV)', 'CH4 (%)', 'CO (ppmV)']],
+          body: measurements.map((m: any) => [
+            m.location || 'Non renseigné',
+            m.pid || 'Non renseigné',
+            m.o2 || 'Non renseigné',
+            m.h2s || 'Non renseigné',
+            m.ch4 || 'Non renseigné',
+            m.co || 'Non renseigné'
+          ]),
+          theme: 'grid',
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [52, 81, 158], textColor: [255, 255, 255] }
+        });
+      } else {
+        doc.setFontSize(10);
+        doc.text('Aucune mesure enregistrée', 10, 40);
+      }
+
+      // Sauvegarde du PDF
+      const fileName = `campagne-pid-${format(new Date(), 'yyyy-MM-dd-HH-mm')}.pdf`;
+      doc.save(fileName);
+
+    } catch (err) {
+      console.error('Error generating PID survey PDF:', err);
+      setError('Une erreur est survenue lors de la génération du PDF. Veuillez réessayer.');
+    } finally {
+      setExportingSurveyPDF(null);
+    }
+  };
+
+  const handleGenerateGasSurveyPDF = async (survey: Survey) => {
+    if (!survey || survey.type !== 'gas') return;
+    
+    try {
+      setExportingSurveyPDF(survey.id);
+      setError(null);
+
+      // Récupérer les données complètes du sondage
+      const { data: fullSurvey, error: surveyError } = await supabase
+        .from('surveys')
+        .select('id, site_id, type, created_at, created_by, common_data, specific_data')
+        .eq('id', survey.id)
+        .single();
+
+      if (surveyError) throw surveyError;
+
+      // Récupérer les informations du site
+      const { data: siteData, error: siteError } = await supabase
+        .from('sites')
+        .select('*')
+        .eq('id', siteId)
+        .single();
+
+      if (siteError) throw siteError;
+
+      const doc = new jsPDF();
+
+      // En-tête avec logo
+      doc.addImage('https://i.imgur.com/nEpYFLo.png', 'PNG', 10, 10, 30, 15);
+      doc.setFontSize(16);
+      doc.text('Fiche de prélèvement de Gaz du sol', 45, 20);
+
+      // Informations générales
+      doc.setFontSize(12);
+      doc.text('Informations générales', 10, 40);
+      
+      doc.setFontSize(10);
+      doc.text('Nom de l\'ouvrage:', 10, 50);
+      doc.text(String(fullSurvey.specific_data?.name || 'Non renseigné'), 60, 50);
+
+      doc.text('Numéro d\'affaire:', 10, 55);
+      doc.text(siteData.project_number || 'Non renseigné', 60, 55);
+
+      doc.text('Client:', 10, 60);
+      doc.text(siteData.name || 'Non renseigné', 60, 60);
+
+      doc.text('Adresse et commune:', 10, 65);
+      doc.text(`${siteData.location || ''}, ${siteData.city || 'Non renseigné'}`, 60, 65);
+
+      doc.text('Chef de projet:', 10, 70);
+      doc.text(siteData.project_manager || 'Non renseigné', 60, 70);
+
+      doc.text('Opérateur:', 10, 75);
+      doc.text(siteData.engineer_in_charge || 'Non renseigné', 60, 75);
+
+      // Conditions météorologiques
+      doc.setFontSize(12);
+      doc.text('Conditions météorologiques', 10, 90);
+      
+      doc.setFontSize(10);
+      doc.text('Date:', 10, 100);
+      doc.text(format(new Date(fullSurvey.common_data?.date || fullSurvey.created_at), 'dd/MM/yyyy', { locale: fr }), 60, 100);
+
+      doc.text('Température ext.:', 10, 105);
+      doc.text(`${fullSurvey.specific_data?.weatherConditions?.externalTemp || 'Non renseigné'}°C`, 60, 105);
+
+      doc.text('Température int.:', 10, 110);
+      doc.text(`${fullSurvey.specific_data?.weatherConditions?.internalTemp || 'Non renseigné'}°C`, 60, 110);
+
+      doc.text('Pression:', 10, 115);
+      doc.text(`${fullSurvey.specific_data?.weatherConditions?.pressure || 'Non renseigné'} Pa`, 60, 115);
+
+      doc.text('Humidité:', 10, 120);
+      doc.text(`${fullSurvey.specific_data?.weatherConditions?.humidity || 'Non renseigné'}%`, 60, 120);
+
+      // Description de l'ouvrage
+      doc.setFontSize(12);
+      doc.text('Description de l\'ouvrage', 110, 40);
+
+      doc.setFontSize(10);
+      doc.text('Type d\'ouvrage:', 110, 50);
+      doc.text(fullSurvey.specific_data?.structureDescription?.type === 'temporary' ? 'Temporaire' : 'Permanent', 160, 50);
+
+      doc.text('Description:', 110, 55);
+      const description = doc.splitTextToSize(
+        fullSurvey.specific_data?.structureDescription?.details || 'Non renseigné',
+        80
+      );
+      doc.text(description, 160, 55);
+
+      // Informations sur le prélèvement
+      doc.addPage();
+      doc.setFontSize(12);
+      doc.text('Informations sur le prélèvement', 10, 20);
+
+      doc.setFontSize(10);
+      doc.text('Type d\'échantillonnage:', 10, 30);
+      doc.text(String(fullSurvey.specific_data?.sampling?.type || 'Non renseigné'), 80, 30);
+
+      doc.text('Nombre de supports:', 10, 35);
+      doc.text(String(fullSurvey.specific_data?.sampling?.supportCount || 'Non renseigné'), 80, 35);
+
+      doc.text('Nature des supports:', 10, 40);
+      doc.text(String(fullSurvey.specific_data?.sampling?.supportType || 'Non renseigné'), 80, 40);
+
+      doc.text('Profondeur (m):', 10, 45);
+      doc.text(String(fullSurvey.specific_data?.sampling?.depth || 'Non renseigné'), 80, 45);
+
+      doc.text('Type d\'étanchéité:', 10, 50);
+      doc.text(String(fullSurvey.specific_data?.sampling?.sealType || 'Non renseigné'), 80, 50);
+
+      // Purge de l'ouvrage
+      doc.setFontSize(12);
+      doc.text('Purge de l\'ouvrage', 10, 70);
+
+      doc.setFontSize(10);
+      doc.text('Détails de la purge:', 10, 80);
+      const purgeDetails = doc.splitTextToSize(
+        fullSurvey.specific_data?.purge?.details || 'Non renseigné',
+        180
+      );
+      doc.text(purgeDetails, 10, 85);
+
+      // Tableau des mesures
+      doc.setFontSize(12);
+      doc.text('Mesures semi-quantitatives', 10, 110);
+
+      const measurements = fullSurvey.specific_data?.purge?.measurements || {};
+      (doc as any).autoTable({
+        startY: 115,
+        head: [['Paramètre', 'Valeur']],
+        body: [
+          ['PID', `${measurements.pid || 'Non renseigné'} ppmV`],
+          ['O2', `${measurements.o2 || 'Non renseigné'} %`],
+          ['H2S', `${measurements.h2s || 'Non renseigné'} ppmV`],
+          ['CH4', `${measurements.ch4 || 'Non renseigné'} %`],
+          ['CO', `${measurements.co || 'Non renseigné'} ppmV`]
+        ],
+        theme: 'grid',
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [52, 81, 158], textColor: [255, 255, 255] }
+      });
+
+      // Contrôle de débit
+      doc.addPage();
+      doc.setFontSize(12);
+      doc.text('Contrôle de débit', 10, 20);
+
+      const flow = fullSurvey.specific_data?.purge?.flow || {};
+      (doc as any).autoTable({
+        startY: 25,
+        head: [['Paramètre', 'Début', 'Intermédiaire', 'Fin']],
+        body: [
+          ['Heure', flow.startTime || '-', flow.endTime || '-', flow.duration || '-'],
+          ['Débit', 
+            flow.flowRates?.start || '-',
+            flow.flowRates?.intermediate || '-',
+            flow.flowRates?.end || '-'
+          ]
+        ],
+        theme: 'grid',
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [52, 81, 158], textColor: [255, 255, 255] }
+      });
+
+      doc.setFontSize(10);
+      doc.text('Débit moyen retenu:', 10, 70);
+      doc.text(`${flow.averageFlow || 'Non renseigné'} l/min`, 80, 70);
+
+      doc.text('Volume total prélevé:', 10, 75);
+      doc.text(`${flow.totalVolume || 'Non renseigné'} l`, 80, 75);
+
+      // Conditionnement et transport
+      doc.setFontSize(12);
+      doc.text('Conditionnement et transport', 10, 90);
+
+      doc.setFontSize(10);
+      doc.text('Laboratoire:', 10, 100);
+      doc.text(String(fullSurvey.specific_data?.laboratory?.name || 'Non renseigné'), 80, 100);
+
+      doc.text('Conditionnement:', 10, 105);
+      doc.text(String(fullSurvey.specific_data?.laboratory?.packaging || 'Non renseigné'), 80, 105);
+
+      doc.text('Transporteur:', 10, 110);
+      doc.text(String(fullSurvey.specific_data?.laboratory?.transporter || 'Non renseigné'), 80, 110);
+
+      doc.text('Date d\'envoi:', 10, 115);
+      const deliveryDate = fullSurvey.specific_data?.laboratory?.deliveryDate
+        ? format(new Date(fullSurvey.specific_data.laboratory.deliveryDate), 'dd/MM/yyyy', { locale: fr })
+        : 'Non renseigné';
+      doc.text(deliveryDate, 80, 115);
+
+      doc.text('Substances à analyser:', 10, 120);
+      const substances = doc.splitTextToSize(
+        fullSurvey.specific_data?.laboratory?.substancesToAnalyze || 'Non renseigné',
+        120
+      );
+      doc.text(substances, 80, 120);
+
+      // Sauvegarde du PDF
+      const fileName = `gaz-${fullSurvey.specific_data?.name || 'sans-nom'}-${format(new Date(), 'yyyy-MM-dd-HH-mm')}.pdf`;
+      doc.save(fileName);
+
+    } catch (err) {
+      console.error('Error generating gas survey PDF:', err);
+      setError('Une erreur est survenue lors de la génération du PDF. Veuillez réessayer.');
+    } finally {
+      setExportingSurveyPDF(null);
+    }
+  };
 
   useEffect(() => {
     loadSurveys();
@@ -395,6 +1332,7 @@ export function SiteSurveys() {
 
       setSurveys(prev => prev.filter(survey => survey.id !== surveyId));
       setShowSuccessMessage(true);
+      setSuccessMessage('La fiche a été supprimée avec succès');
       setTimeout(() => setShowSuccessMessage(false), 3000);
     } catch (err) {
       console.error('Error deleting survey:', err);
@@ -456,7 +1394,7 @@ export function SiteSurveys() {
               <CheckCircle className="h-5 w-5 text-green-400" />
             </div>
             <div className="ml-3">
-              <p className="text-sm text-green-700">La fiche a été supprimée avec succès</p>
+              <p className="text-sm text-green-700">{successMessage}</p>
             </div>
           </div>
         </div>
@@ -507,8 +1445,58 @@ export function SiteSurveys() {
                       <div className="flex items-center space-x-2">
                         {survey.type === 'soil' && (
                           <button
-                            onClick={() => handleGenerateSoilSurveyPDF(survey)}
-                            disabled={exportingPDF}
+                            onClick={() => handleGenerateSoilSurveyPDF(survey)} 
+                            disabled={exportingSurveyPDF === survey.id}
+                            className="p-2 rounded-full text-gray-400 hover:text-[#34519e] hover:bg-[#34519e]/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#34519e] transition-colors duration-200"
+                          >
+                            <span className="sr-only">Générer PDF</span>
+                            <FileDown className="h-5 w-5" />
+                          </button>
+                        )}
+                        {survey.type === 'groundwater' && (
+                          <button
+                            onClick={() => handleGenerateGroundwaterSurveyPDF(survey)}
+                            disabled={exportingSurveyPDF === survey.id}
+                            className="p-2 rounded-full text-gray-400 hover:text-[#34519e] hover:bg-[#34519e]/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#34519e] transition-colors duration-200"
+                          >
+                            <span className="sr-only">Générer PDF</span>
+                            <FileDown className="h-5 w-5" />
+                          </button>
+                        )}
+                        {survey.type === 'gas' && (
+                          <button
+                            onClick={() => handleGenerateGasSurveyPDF(survey)}
+                            disabled={exportingSurveyPDF === survey.id}
+                            className="p-2 rounded-full text-gray-400 hover:text-[#34519e] hover:bg-[#34519e]/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#34519e] transition-colors duration-200"
+                          >
+                            <span className="sr-only">Générer PDF</span>
+                            <FileDown className="h-5 w-5" />
+                          </button>
+                        )}
+                        {survey.type === 'ambient_air' && (
+                          <button
+                            onClick={() => handleGenerateAirSurveyPDF(survey)}
+                            disabled={exportingSurveyPDF === survey.id}
+                            className="p-2 rounded-full text-gray-400 hover:text-[#34519e] hover:bg-[#34519e]/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#34519e] transition-colors duration-200"
+                          >
+                            <span className="sr-only">Générer PDF</span>
+                            <FileDown className="h-5 w-5" />
+                          </button>
+                        )}
+                        {survey.type === 'surface_water' && (
+                          <button
+                            onClick={() => handleGenerateWaterSurveyPDF(survey)}
+                            disabled={exportingSurveyPDF === survey.id}
+                            className="p-2 rounded-full text-gray-400 hover:text-[#34519e] hover:bg-[#34519e]/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#34519e] transition-colors duration-200"
+                          >
+                            <span className="sr-only">Générer PDF</span>
+                            <FileDown className="h-5 w-5" />
+                          </button>
+                        )}
+                        {survey.type === 'pid' && (
+                          <button
+                            onClick={() => handleGeneratePIDSurveyPDF(survey)}
+                            disabled={exportingSurveyPDF === survey.id}
                             className="p-2 rounded-full text-gray-400 hover:text-[#34519e] hover:bg-[#34519e]/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#34519e] transition-colors duration-200"
                           >
                             <span className="sr-only">Générer PDF</span>
